@@ -1,0 +1,112 @@
+tables:
+
+  patient_summary:
+    description: One row per patient. Latest vitals, risk scores, encounter history.
+    notes:
+      - Use icu_admissions > 0 to find ICU patients. There is NO is_icu column here.
+      - SpO2 values are in latest_spo2. Do NOT look for SpO2 in critical_alerts.
+      - Use critical_labs_90d > 0 to check if patient has critical labs. No JOIN needed.
+      - NEWS2 risk values are always uppercase HIGH MEDIUM or LOW.
+      - gender values are always uppercase M or F.
+    columns:
+      patient_id: "INT - Unique patient identifier. Primary key."
+      gender: "STRING - Patient gender. Values: M or F"
+      age_years: "LONG - Patient age in years"
+      age_group: "STRING - Age group. Values: SENIOR or PEDIATRIC"
+      latest_sbp: "DOUBLE - Latest systolic blood pressure in mmHg"
+      latest_dbp: "DOUBLE - Latest diastolic blood pressure in mmHg"
+      latest_hr: "DOUBLE - Latest heart rate in beats per minute"
+      latest_spo2: "DOUBLE - Latest oxygen saturation percentage. Normal is 95-100. Use this for SpO2 questions."
+      latest_temp_f: "DOUBLE - Latest temperature in Fahrenheit"
+      latest_news2_risk: "STRING - Early warning risk level. Values: HIGH or MEDIUM or LOW"
+      vitals_recorded_at: "TIMESTAMP - When latest vitals were recorded"
+      total_encounters: "LONG - Total number of encounters"
+      total_admits: "LONG - Total number of admissions"
+      icu_admissions: "LONG - Number of ICU admissions. Use icu_admissions > 0 to filter ICU patients."
+      last_admit_date: "TIMESTAMP - Date of most recent admission"
+      lab_count_90d: "LONG - Total lab tests in last 90 days"
+      abnormal_labs_90d: "LONG - Abnormal lab results in last 90 days"
+      critical_labs_90d: "LONG - Critical lab results in last 90 days. Use > 0 to find patients with critical labs."
+      dq_complete: "BOOLEAN - True if patient record is complete"
+      gold_computed_at: "TIMESTAMP - When this row was last computed by the pipeline"
+
+  critical_alerts:
+    description: One row per critical lab result in the last 7 days.
+    notes:
+      - Use this table when you need specific lab test names or numeric values
+      - abnormal_direction is HIGH or LOW
+      - JOIN to patient_summary on patient_id for patient demographics
+    columns:
+      result_id: "INT - Unique result identifier"
+      patient_id: "INT - Foreign key to patient_summary.patient_id"
+      mrn_hash: "STRING - Masked patient MRN"
+      age_years: "LONG - Patient age"
+      gender: "STRING - Patient gender. Values: M or F"
+      test_name: "STRING - Lab test name e.g. Hemoglobin Creatinine Troponin"
+      test_code: "STRING - LOINC code for the lab test"
+      result_numeric: "DOUBLE - Numeric result value"
+      unit: "STRING - Unit of measurement e.g. g/dL umol/L ng/mL"
+      abnormal_direction: "STRING - Which direction is abnormal. Values: HIGH or LOW"
+      abnormal_flag: "STRING - Abnormal flag from the lab system"
+      result_time: "TIMESTAMP - When the lab result was recorded"
+
+  encounter_metrics:
+    description: One row per patient encounter with aggregated vitals and risk scores.
+    notes:
+      - Use is_icu = true to filter ICU encounters
+      - news2_risk here is per-encounter not the latest overall risk
+    columns:
+      event_id: "STRING - Unique encounter identifier"
+      patient_id: "INT - Foreign key to patient_summary.patient_id"
+      event_type: "STRING - Type of encounter. Values: ADMIT or DISCHARGE or TRANSFER"
+      event_time: "TIMESTAMP - When the encounter occurred"
+      facility_id: "STRING - Which facility"
+      ward: "STRING - Ward name e.g. ICU Cardiology General Maternity"
+      bed_number: "STRING - Bed number"
+      attending_doctor: "STRING - Attending physician name"
+      reason: "STRING - Reason for encounter"
+      is_icu: "BOOLEAN - True if this was an ICU encounter"
+      vital_count: "LONG - Number of vitals recorded during encounter"
+      avg_sbp: "DOUBLE - Average systolic BP during encounter"
+      min_spo2: "DOUBLE - Minimum SpO2 during encounter"
+      max_hr: "DOUBLE - Maximum heart rate during encounter"
+      max_news2_score: "INT - Maximum NEWS2 score during encounter"
+      news2_risk: "STRING - Risk level for this encounter. Values: HIGH or MEDIUM or LOW"
+
+  daily_census:
+    description: Daily counts of patient events by ward. Use for trend analysis.
+    notes:
+      - For this week use event_date >= DATE_SUB(CURRENT_DATE() 7)
+      - For today use DATE(event_date) = CURRENT_DATE()
+    columns:
+      event_date: "DATE - The date"
+      ward: "STRING - Ward name"
+      event_type: "STRING - Type of event. Values: ADMIT or DISCHARGE or TRANSFER"
+      event_count: "LONG - Number of events that day"
+
+  clinical_notes:
+    description: Free text clinical notes written by doctors and nurses.
+    notes:
+      - Use LOWER(note_text) LIKE keyword for text search
+      - Do NOT filter by note_type unless the question specifically asks for a note type
+      - JOIN to patient_summary on patient_id to get structured data alongside notes
+    columns:
+      note_id: "INT - Unique note identifier"
+      patient_id: "INT - Foreign key to patient_summary.patient_id"
+      note_type: "STRING - Type of note. Values: ADMISSION or PROGRESS or NURSING or DISCHARGE"
+      authored_by: "STRING - Doctor or nurse who wrote the note"
+      authored_at: "TIMESTAMP - When the note was written"
+      note_text: "STRING - Full text of the clinical note"
+
+relationships:
+  - "critical_alerts.patient_id -> patient_summary.patient_id"
+  - "encounter_metrics.patient_id -> patient_summary.patient_id"
+  - "clinical_notes.patient_id -> patient_summary.patient_id"
+
+sql_rules:
+  - "Always add LIMIT 100 unless the question asks for counts or aggregations"
+  - "For this week use WHERE DATE(col) >= DATE_SUB(CURRENT_DATE(), 7)"
+  - "For today use WHERE DATE(col) = CURRENT_DATE()"
+  - "All string filter values must be uppercase"
+  - "For text search always use LOWER(note_text) LIKE percent keyword percent"
+  - "Return ONLY the SQL with no explanation no markdown and no backticks"

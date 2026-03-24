@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EHR Clinical Query</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --surface: #181c27; --surface2: #1e2333;
+    --border: #2a3050; --teal: #00c9a7; --teal-dim: #00c9a722;
+    --purple: #a78bfa; --purple-dim: #a78bfa22;
+    --text: #e2e8f0; --muted: #8892a4; --danger: #f87171;
+    --font: 'DM Sans', sans-serif; --mono: 'DM Mono', monospace;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 15px; min-height: 100vh; display: flex; flex-direction: column; }
+  header { border-bottom: 1px solid var(--border); padding: 18px 32px; display: flex; align-items: center; gap: 14px; }
+  .logo-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+  header h1 { font-size: 15px; font-weight: 500; letter-spacing: 0.04em; }
+  header span { font-size: 12px; color: var(--muted); margin-left: auto; font-family: var(--mono); }
+  main { flex: 1; max-width: 900px; width: 100%; margin: 0 auto; padding: 32px 24px; display: flex; flex-direction: column; gap: 24px; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px; width: fit-content; }
+  .tab { padding: 8px 20px; border-radius: 7px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; color: var(--muted); border: none; background: none; font-family: var(--font); }
+  .tab.active-sql { background: var(--teal-dim); color: var(--teal); }
+  .tab.active-rag { background: var(--purple-dim); color: var(--purple); }
+
+  /* Panels */
+  .panel { display: none; flex-direction: column; gap: 20px; }
+  .panel.active { display: flex; }
+
+  .input-area { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+  .input-row { display: flex; gap: 10px; align-items: flex-end; }
+  textarea { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; color: var(--text); font-family: var(--font); font-size: 15px; resize: none; height: 56px; line-height: 1.5; outline: none; transition: border-color 0.2s; }
+  textarea:focus { border-color: var(--teal); }
+  #rag-q:focus { border-color: var(--purple); }
+  textarea::placeholder { color: var(--muted); }
+
+  .btn-sql { background: var(--teal); color: #0f1117; border: none; border-radius: 8px; padding: 0 24px; height: 56px; font-family: var(--font); font-size: 14px; font-weight: 500; cursor: pointer; transition: opacity 0.2s; white-space: nowrap; }
+  .btn-rag { background: var(--purple); color: #0f1117; border: none; border-radius: 8px; padding: 0 24px; height: 56px; font-family: var(--font); font-size: 14px; font-weight: 500; cursor: pointer; transition: opacity 0.2s; white-space: nowrap; }
+  .btn-sql:hover, .btn-rag:hover { opacity: 0.88; }
+  .btn-sql:disabled, .btn-rag:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .suggestions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 5px 14px; font-size: 12px; color: var(--muted); cursor: pointer; transition: all 0.15s; }
+  .chip-sql:hover { border-color: var(--teal); color: var(--teal); background: var(--teal-dim); }
+  .chip-rag:hover { border-color: var(--purple); color: var(--purple); background: var(--purple-dim); }
+
+  /* Cards */
+  .result-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; animation: fadeIn 0.25s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .result-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+  .result-header .q { font-size: 13px; color: var(--muted); flex: 1; }
+  .result-header .q strong { color: var(--text); font-weight: 500; }
+  .badge-sql { background: var(--teal-dim); color: var(--teal); border-radius: 20px; padding: 3px 12px; font-size: 12px; font-family: var(--mono); white-space: nowrap; }
+  .badge-rag { background: var(--purple-dim); color: var(--purple); border-radius: 20px; padding: 3px 12px; font-size: 12px; font-family: var(--mono); white-space: nowrap; }
+
+  .sql-block { padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--bg); }
+  .sql-label { font-size: 11px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
+  .sql-code { font-family: var(--mono); font-size: 13px; color: #a5f3e0; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+
+  /* RAG answer */
+  .rag-answer { padding: 20px; border-bottom: 1px solid var(--border); line-height: 1.8; font-size: 14px; color: var(--text); }
+  .notes-section { padding: 14px 20px; }
+  .notes-label { font-size: 11px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; }
+  .note-item { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; }
+  .note-meta { font-size: 11px; color: var(--purple); font-family: var(--mono); margin-bottom: 6px; }
+  .note-text { font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { background: var(--surface2); }
+  th { padding: 10px 16px; text-align: left; color: var(--muted); font-weight: 500; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 10px 16px; border-bottom: 1px solid var(--border); color: var(--text); font-family: var(--mono); font-size: 12px; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--surface2); }
+  .no-results { padding: 32px; text-align: center; color: var(--muted); font-size: 14px; }
+  .error-card { background: #1a0f0f; border: 1px solid #5a1f1f; border-radius: 12px; padding: 20px; color: var(--danger); font-size: 13px; font-family: var(--mono); animation: fadeIn 0.25s ease; }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--teal); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 8px; }
+  .spinner-rag { border-top-color: var(--purple); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .status { padding: 14px 20px; color: var(--muted); font-size: 13px; display: flex; align-items: center; }
+  .history { display: flex; flex-direction: column; gap: 16px; }
+
+  /* Mode description */
+  .mode-desc { font-size: 12px; color: var(--muted); padding: 6px 2px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo-dot"></div>
+  <h1>EHR Clinical Query</h1>
+  <span>Gold layer · Llama 3.1 · Groq</span>
+</header>
+
+<main>
+  <div class="tabs">
+    <button class="tab active-sql" onclick="switchTab('sql')">Text-to-SQL</button>
+    <button class="tab" onclick="switchTab('rag')">Clinical RAG</button>
+  </div>
+
+  <!-- SQL Panel -->
+  <div class="panel active" id="panel-sql">
+    <div class="mode-desc">Ask precise questions — gets structured results from Gold tables</div>
+    <div class="input-area">
+      <div class="input-row">
+        <textarea id="sql-q" placeholder="e.g. how many ICU patients this week?" onkeydown="handleKey(event,'sql')"></textarea>
+        <button class="btn-sql" id="sql-btn" onclick="askSQL()">Ask</button>
+      </div>
+      <div class="suggestions">
+        <span class="chip chip-sql" onclick="setQ('sql','show me all ICU patients')">ICU patients</span>
+        <span class="chip chip-sql" onclick="setQ('sql','which patients have critical labs?')">Critical labs</span>
+        <span class="chip chip-sql" onclick="setQ('sql','how many admissions per ward this week?')">Admissions by ward</span>
+        <span class="chip chip-sql" onclick="setQ('sql','show high risk patients with SpO2 below 92')">Low SpO2</span>
+        <span class="chip chip-sql" onclick="setQ('sql','count patients by news2 risk level')">Risk levels</span>
+        <span class="chip chip-sql" onclick="setQ('sql','show female patients older than 60')">Female 60+</span>
+      </div>
+    </div>
+    <div class="history" id="sql-history"></div>
+  </div>
+
+  <!-- RAG Panel -->
+  <div class="panel" id="panel-rag">
+    <div class="mode-desc">Ask clinical questions — reasons across notes + structured data together</div>
+    <div class="input-area">
+      <div class="input-row">
+        <textarea id="rag-q" placeholder="e.g. which patients are most at risk right now?" onkeydown="handleKey(event,'rag')"></textarea>
+        <button class="btn-rag" id="rag-btn" onclick="askRAG()">Ask</button>
+      </div>
+      <div class="suggestions">
+        <span class="chip chip-rag" onclick="setQ('rag','which patients are most critical right now?')">Most critical</span>
+        <span class="chip chip-rag" onclick="setQ('rag','what is the clinical situation for patient 2?')">Patient 2 status</span>
+        <span class="chip chip-rag" onclick="setQ('rag','which patients have respiratory problems?')">Respiratory</span>
+        <span class="chip chip-rag" onclick="setQ('rag','summarise all ICU patients')">ICU summary</span>
+        <span class="chip chip-rag" onclick="setQ('rag','who is at risk of deteriorating tonight?')">Deterioration risk</span>
+      </div>
+    </div>
+    <div class="history" id="rag-history"></div>
+  </div>
+</main>
+
+<script>
+  let activeTab = 'sql';
+
+  function switchTab(tab) {
+    activeTab = tab;
+    document.getElementById('panel-sql').classList.toggle('active', tab === 'sql');
+    document.getElementById('panel-rag').classList.toggle('active', tab === 'rag');
+    document.querySelectorAll('.tab').forEach((t, i) => {
+      t.className = 'tab';
+      if (i === 0 && tab === 'sql') t.className = 'tab active-sql';
+      if (i === 1 && tab === 'rag') t.className = 'tab active-rag';
+    });
+  }
+
+  function setQ(type, text) {
+    document.getElementById(type === 'sql' ? 'sql-q' : 'rag-q').value = text;
+  }
+
+  function handleKey(e, type) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); type === 'sql' ? askSQL() : askRAG(); }
+  }
+
+  async function askSQL() {
+    const input = document.getElementById('sql-q');
+    const btn   = document.getElementById('sql-btn');
+    const q     = input.value.trim();
+    if (!q) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Thinking...';
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    card.innerHTML = '<div class="status"><span class="spinner"></span>Generating SQL and running query...</div>';
+    document.getElementById('sql-history').prepend(card);
+    try {
+      const res  = await fetch('/ask', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({question: q}) });
+      const data = await res.json();
+      if (!data.success) {
+        card.className = 'error-card';
+        card.innerHTML = `<strong>Error:</strong> ${data.error}`;
+      } else {
+        let tableHTML = data.rows.length === 0
+          ? '<div class="no-results">No results — try rephrasing</div>'
+          : `<div class="table-wrap"><table><thead><tr>${data.columns.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${data.rows.map(r=>`<tr>${r.map(v=>`<td>${v}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+        card.innerHTML = `
+          <div class="result-header">
+            <div class="q"><strong>${q}</strong></div>
+            <div class="badge-sql">${data.count} row${data.count!==1?'s':''}</div>
+          </div>
+          <div class="sql-block">
+            <div class="sql-label">Generated SQL</div>
+            <div class="sql-code">${data.sql}</div>
+          </div>
+          ${tableHTML}`;
+      }
+    } catch(e) {
+      card.className = 'error-card';
+      card.innerHTML = `<strong>Connection error:</strong> ${e.message}`;
+    }
+    input.value = '';
+    btn.disabled = false;
+    btn.textContent = 'Ask';
+  }
+
+  async function askRAG() {
+    const input = document.getElementById('rag-q');
+    const btn   = document.getElementById('rag-btn');
+    const q     = input.value.trim();
+    if (!q) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner spinner-rag"></span>Reasoning...';
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    card.innerHTML = '<div class="status"><span class="spinner spinner-rag"></span>Searching notes and structured data...</div>';
+    document.getElementById('rag-history').prepend(card);
+    try {
+      const res  = await fetch('/rag', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({question: q}) });
+      const data = await res.json();
+      if (!data.success) {
+        card.className = 'error-card';
+        card.innerHTML = `<strong>Error:</strong> ${data.error}`;
+      } else {
+        const notesHTML = data.notes_used.map(n => `
+          <div class="note-item">
+            <div class="note-meta">Patient ${n.patient_id} · ${n.note_type} · ${n.authored_by} · similarity ${n.score}</div>
+            <div class="note-text">${n.text}</div>
+          </div>`).join('');
+        card.innerHTML = `
+          <div class="result-header">
+            <div class="q"><strong>${q}</strong></div>
+            <div class="badge-rag">RAG · ${data.patient_ids.length} patient${data.patient_ids.length!==1?'s':''}</div>
+          </div>
+          <div class="rag-answer">${data.answer.replace(/\n/g,'<br>')}</div>
+          <div class="notes-section">
+            <div class="notes-label">Clinical notes used</div>
+            ${notesHTML}
+          </div>`;
+      }
+    } catch(e) {
+      card.className = 'error-card';
+      card.innerHTML = `<strong>Connection error:</strong> ${e.message}`;
+    }
+    input.value = '';
+    btn.disabled = false;
+    btn.textContent = 'Ask';
+  }
+</script>
+</body>
+</html>

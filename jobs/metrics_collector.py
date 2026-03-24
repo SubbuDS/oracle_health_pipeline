@@ -1,0 +1,241 @@
+import sys, os, time, json, argparse, requests
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from datetime import datetime
+
+CLICKHOUSE_URL   = "http://localhost:8123/?user=ehr_admin&password=ehr2026"
+KAFKA_BOOTSTRAP  = "localhost:29092"
+DEBEZIUM_URL     = "http://localhost:8083"
+COLLECT_INTERVAL = 30
+
+KAFKA_TOPICS = [
+    "ehr.public.patients",
+    "ehr.public.adt_events",
+    "ehr.public.lab_results",
+    "ehr.public.vitals",
+]
+
+
+def ch_insert(table, rows):
+    if not rows:
+        return
+    values = ", ".join(rows)
+    query  = f"INSERT INTO pipeline_metrics.{table} VALUES {values}"
+    try:
+        r = requests.post(CLICKHOUSE_URL, data=query.encode(), timeout=5)
+        if r.status_code != 200:
+            print(f"  ClickHouse error: {r.text[:200]}")
+    except Exception as e:
+        print(f"  ClickHouse write failed: {e}")
+
+def ts():
+    return datetime.utcnow().strftime("'%Y-%m-%d %H:%M:%S'")
+
+
+def collect_debezium_metrics():
+    rows = []
+    try:
+        r = requests.get(f"{DEBEZIUM_URL}/connectors", timeout=5)
+        connectors = r.json() if r.status_code == 200 else []
+        for connector in connectors:
+            try:
+                s = requests.get(f"{DEBEZIUM_URL}/connectors/{connector}/status", timeout=5).json()
+                state      = s.get("connector", {}).get("state", "UNKNOWN")
+                is_running = 1.0 if state == "RUNNING" else 0.0
+                tasks      = s.get("tasks", [])
+                task_run   = sum(1 for t in tasks if t.get("state") == "RUNNING")
+                rows.append(f"({ts()}, '{connector}', 'is_running',    {is_running}, '{state}')")
+                rows.append(f"({ts()}, '{connector}', 'tasks_running', {task_run},   '{state}')")
+                rows.append(f"({ts()}, '{connector}', 'task_count',    {len(tasks)}, '{state}')")
+                print(f"  Debezium [{connector}] state={state} tasks={task_run}/{len(tasks)}")
+            except Exception as e:
+                print(f"  Debezium {connector} error: {e}")
+                rows.append(f"({ts()}, '{connector}', 'is_running', 0, 'error')")
+    except Exception as e:
+        print(f"  Debezium connection error: {e}")
+        rows.append(f"({ts()}, 'ehr-connector', 'is_running', 0, 'connection_error')")
+    ch_insert("debezium_metrics", rows)
+
+
+def collect_kafka_metrics():
+    rows = []
+    try:
+        from kafka import KafkaAdminClient, KafkaConsumer
+        from kafka.structs import TopicPartition
+
+        consumer = KafkaConsumer(bootstrap_servers=KAFKA_BOOTSTRAP, consumer_timeout_ms=2000)
+        for topic in KAFKA_TOPICS:
+            try:
+                tp = TopicPartition(topic, 0)
+                consumer.assign([tp])
+                consumer.seek_to_end(tp)
+                latest = consumer.position(tp)
+                consumer.seek_to_beginning(tp)
+                earliest = consumer.position(tp)
+                total_messages = latest - earliest
+                rows.append(f"({ts()}, '{topic}', 'latest_offset',   {latest},          '')")
+                rows.append(f"({ts()}, '{topic}', 'total_messages',  {total_messages},  '')")
+                print(f"  Kafka [{topic}] latest={latest} total={total_messages}")
+            except Exception as e:
+                print(f"  Kafka topic {topic} error: {e}")
+                rows.append(f"({ts()}, '{topic}', 'latest_offset', -1, 'error')")
+        consumer.close()
+    except Exception as e:
+        print(f"  Kafka error: {e}")
+        for topic in KAFKA_TOPICS:
+            rows.append(f"({ts()}, '{topic}', 'latest_offset', -1, 'connection_error')")
+    ch_insert("kafka_metrics", rows)
+
+
+def collect_spark_metrics():
+    rows  = []
+    found = False
+    for port in [4040, 4041, 4042, 4043]:
+        try:
+            r = requests.get(f"http://localhost:{port}/api/v1/applications", timeout=3)
+            if r.status_code != 200:
+                continue
+            for app in r.json():
+                app_id   = app.get("id")
+                app_name = app.get("name", "unknown")
+
+                # ── Structured Streaming queries ──────────────────────────
+                try:
+                    qr = requests.get(
+                        f"http://localhost:{port}/api/v1/applications/{app_id}/streaming/queries",
+                        timeout=3
+                    )
+                    if qr.status_code == 200:
+                        for q in qr.json():
+                            run_id = q.get("runId")
+                            # grab recent progress for this query
+                            pr = requests.get(
+                                f"http://localhost:{port}/api/v1/applications/{app_id}"
+                                f"/streaming/queries/{run_id}/recentProgress",
+                                timeout=3
+                            )
+                            if pr.status_code == 200 and pr.json():
+                                p        = pr.json()[-1]          # latest batch
+                                bid      = p.get("batchId", 0)
+                                inp_rps  = p.get("inputRowsPerSecond", 0) or 0
+                                proc_rps = p.get("processedRowsPerSecond", 0) or 0
+                                num_rows = p.get("numInputRows", 0) or 0
+                                trig_ms  = p.get("durationMs", {}).get("triggerExecution", 0) or 0
+
+                                rows.append(f"({ts()}, '{app_name}', 'active',                1,        {bid})")
+                                rows.append(f"({ts()}, '{app_name}', 'input_rows_per_sec',   {inp_rps},  {bid})")
+                                rows.append(f"({ts()}, '{app_name}', 'processed_rows_per_sec',{proc_rps},{bid})")
+                                rows.append(f"({ts()}, '{app_name}', 'num_input_rows',        {num_rows},{bid})")
+                                rows.append(f"({ts()}, '{app_name}', 'trigger_ms',            {trig_ms}, {bid})")
+
+                                print(f"  Spark [{app_name}] batch={bid} "
+                                      f"rows={num_rows} rps={inp_rps:.1f} trigger={trig_ms}ms")
+                                found = True
+                except Exception as e:
+                    print(f"  Spark query progress error: {e}")
+
+                # ── fallback: old DStream statistics ──────────────────────
+                if not found:
+                    try:
+                        sr = requests.get(
+                            f"http://localhost:{port}/api/v1/applications/{app_id}/streaming/statistics",
+                            timeout=3
+                        )
+                        if sr.status_code == 200:
+                            s = sr.json()
+                            rows.append(f"({ts()}, '{app_name}', 'avg_processing_ms', {s.get('avgProcessingTime',0)}, 0)")
+                            rows.append(f"({ts()}, '{app_name}', 'records_processed',  {s.get('numProcessedRecords',0)}, 0)")
+                            rows.append(f"({ts()}, '{app_name}', 'active',             1, 0)")
+                            found = True
+                    except Exception:
+                        pass
+            break
+        except Exception:
+            continue
+
+    if not found:
+        rows.append(f"({ts()}, 'bronze_streaming', 'active', 0, 0)")
+        print("  Spark UI not accessible")
+
+    ch_insert("spark_metrics", rows)
+
+def collect_pipeline_health():
+    rows = []
+    try:
+        from utils.spark_session import get_spark, GOLD_BASE, LOCAL_GOLD, BRONZE_BASE, LOCAL_BRONZE
+        from pyspark.sql import functions as F
+
+        spark = get_spark("MetricsCollector", enable_minio=True, enable_delta=True)
+
+        gold_tables = ["patient_summary", "critical_alerts",
+                       "encounter_metrics", "daily_census", "quality_dashboard"]
+
+        for table in gold_tables:
+            for path in [f"{GOLD_BASE}/{table}", f"{LOCAL_GOLD}/{table}"]:
+                try:
+                    df    = spark.read.format("delta").load(path)
+                    count = df.count()
+                    age   = -1
+                    if "gold_computed_at" in df.columns:
+                        latest = df.agg(F.max("gold_computed_at")).collect()[0][0]
+                        if latest:
+                            age = round((datetime.utcnow() - latest.replace(tzinfo=None)).total_seconds() / 60, 1)
+                    status = "ok" if age < 30 else "stale"
+                    rows.append(f"({ts()}, 'gold', '{table}', 'row_count',   {count}, '{status}')")
+                    rows.append(f"({ts()}, 'gold', '{table}', 'age_minutes', {age},   '{status}')")
+                    print(f"  Gold [{table}] rows={count} age={age}min")
+                    break
+                except Exception:
+                    continue
+
+        bronze_tables = ["patients", "adt_events", "lab_results", "vitals"]
+        for table in bronze_tables:
+            for path in [f"{BRONZE_BASE}/{table}", f"{LOCAL_BRONZE}/{table}"]:
+                try:
+                    count = spark.read.parquet(path).count()
+                    rows.append(f"({ts()}, 'bronze', '{table}', 'row_count', {count}, 'ok')")
+                    print(f"  Bronze [{table}] rows={count}")
+                    break
+                except Exception:
+                    continue
+
+        spark.stop()
+
+    except Exception as e:
+        print(f"  Pipeline health error: {e}")
+        rows.append(f"({ts()}, 'error', 'pipeline', 'health_check_failed', 0, 'error')")
+
+    ch_insert("pipeline_health", rows)
+
+
+def collect_all():
+    print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Collecting metrics...")
+    collect_debezium_metrics()
+    collect_kafka_metrics()
+    collect_spark_metrics()
+    collect_pipeline_health()
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Done — written to ClickHouse")
+
+
+def run(once=False):
+    print("EHR Pipeline Metrics Collector")
+    print(f"  ClickHouse : {CLICKHOUSE_URL}")
+    print(f"  Kafka      : {KAFKA_BOOTSTRAP}")
+    print(f"  Debezium   : {DEBEZIUM_URL}")
+    print(f"  Interval   : {COLLECT_INTERVAL}s")
+    if once:
+        collect_all()
+        return
+    while True:
+        try:
+            collect_all()
+        except Exception as e:
+            print(f"Collection error: {e}")
+        time.sleep(COLLECT_INTERVAL)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--once", action="store_true")
+    args = parser.parse_args()
+    run(once=args.once)
