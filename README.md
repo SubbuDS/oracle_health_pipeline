@@ -152,3 +152,4 @@ Pipeline metrics are collected and visualized in Grafana:
 
 - `temperature` field arrives as base64 from Debezium (NUMERIC type serialization) — fix pending in Debezium connector config
 - Silver vitals: first run creates table, subsequent runs MERGE correctly
+# CI/CD enabled
