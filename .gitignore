@@ -1,2 +1,26 @@
-# Project exclude paths
+# Virtual environment
 /.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE
+.idea/
+.vscode/
+
+# Credentials and connectors
+connectors/
+
+# Backup files
+*.bak
+
+# Spark event logs
+spark-warehouse/
+derby.log
+
+# Local config overrides
+*.local.yml
+*.local.yaml
