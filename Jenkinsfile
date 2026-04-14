@@ -6,7 +6,8 @@ pipeline {
     stage('Validate') {
       steps {
         sh 'echo "Running validation..."'
-        sh 'python3 -c "import sys; sys.path.insert(0, \".\"); print(\"Python OK\")"'
+        sh 'python3 --version'
+        sh 'test -f jobs/bronze_streaming.py && echo "bronze_streaming.py found" || exit 1'
       }
     }
 
