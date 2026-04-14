@@ -3,20 +3,16 @@ pipeline {
 
   stages {
 
-    stage('Hello') {
+    stage('Validate') {
       steps {
-        sh 'echo "Jenkins is alive"'
+        sh 'echo "Running validation..."'
+        sh 'python3 -c "import jobs.bronze_streaming; print(\"Import OK\")"'
       }
     }
 
-    stage('Check Docker') {
+    stage('Check Infrastructure') {
       steps {
-        sh 'docker ps'
-      }
-    }
-
-    stage('Check Kubectl') {
-      steps {
+        sh 'docker ps | grep postgres'
         sh 'kubectl get nodes'
       }
     }
