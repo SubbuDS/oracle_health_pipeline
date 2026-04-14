@@ -11,8 +11,9 @@ __pycache__/
 .idea/
 .vscode/
 
-# Credentials and connectors
-connectors/
+# Credentials — ignore actual connector config, keep template
+connectors/*.json
+!connectors/*.json.template
 
 # Backup files
 *.bak
