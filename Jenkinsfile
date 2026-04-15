@@ -23,6 +23,7 @@ pipeline {
       steps {
         dir('terraform') {
           sh 'terraform init -input=false'
+          sh 'terraform workspace select dev || terraform workspace new dev'
           sh 'terraform apply -input=false -auto-approve -var="environment=dev"'
         }
       }
@@ -33,6 +34,7 @@ pipeline {
       steps {
         dir('terraform') {
           sh 'terraform init -input=false'
+          sh 'terraform workspace select prod || terraform workspace new prod'
           sh 'terraform apply -input=false -auto-approve -var="environment=prod"'
         }
       }
