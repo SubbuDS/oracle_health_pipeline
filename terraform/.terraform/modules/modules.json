@@ -1,0 +1,1 @@
+{"Modules":[{"Key":"","Source":"","Dir":"."},{"Key":"kafka","Source":"./modules/kafka","Dir":"modules/kafka"},{"Key":"minio","Source":"./modules/minio","Dir":"modules/minio"},{"Key":"postgres","Source":"./modules/postgres","Dir":"modules/postgres"}]}
