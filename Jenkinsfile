@@ -27,7 +27,7 @@ pipeline {
     stage('Terraform Dev') {
       when { branch 'develop' }
       steps {
-        dir('/pipeline/terraform') {
+        dir('terraform') {
           sh 'terraform init -input=false'
           sh 'terraform workspace select dev || terraform workspace new dev'
           sh 'terraform apply -input=false -auto-approve -var="environment=dev"'
@@ -38,7 +38,7 @@ pipeline {
     stage('Terraform Prod') {
       when { branch 'main' }
       steps {
-        dir('/pipeline/terraform') {
+        dir('terraform') {
           sh 'terraform init -input=false'
           sh 'terraform workspace select prod || terraform workspace new prod'
           sh 'terraform apply -input=false -auto-approve -var="environment=prod"'
