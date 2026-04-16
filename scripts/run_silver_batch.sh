@@ -5,7 +5,7 @@ echo "Starting EHR Silver Batch Job..."
 
 SPARK_HOME="${SPARK_HOME:-/spark}"
 PIPELINE_HOME="${PIPELINE_HOME:-/pipeline}"
-VENV_PYTHON="/venv/bin/python3"
+VENV_PYTHON="/opt/pyenv/bin/python3"
 
 export MINIO_ENDPOINT="http://host.docker.internal:9000"
 export MINIO_ACCESS_KEY="minioadmin"
