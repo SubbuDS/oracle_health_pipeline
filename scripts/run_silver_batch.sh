@@ -3,11 +3,12 @@ set -e
 
 echo "Starting EHR Silver Batch Job..."
 
-SPARK_HOME="/Users/subbu/Documents/spark-4.0.0-bin-hadoop3"
-PIPELINE_HOME="/Users/subbu/PycharmProjects/oracle_health_pipeline"
+# These paths work both on Mac and inside Jenkins container
+SPARK_HOME="${SPARK_HOME:-/spark}"
+PIPELINE_HOME="${PIPELINE_HOME:-/pipeline}"
 VENV_PYTHON="$PIPELINE_HOME/.venv/bin/python3"
 
-export MINIO_ENDPOINT="http://localhost:9000"
+export MINIO_ENDPOINT="http://host.docker.internal:9000"
 export MINIO_ACCESS_KEY="minioadmin"
 export MINIO_SECRET_KEY="minioadmin"
 export MINIO_BUCKET="spark-data"
@@ -22,7 +23,7 @@ $SPARK_HOME/bin/spark-submit \
   --driver-memory 1g \
   --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
   --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
-  --conf spark.hadoop.fs.s3a.endpoint=http://localhost:9000 \
+  --conf spark.hadoop.fs.s3a.endpoint=http://host.docker.internal:9000 \
   --conf spark.hadoop.fs.s3a.access.key=minioadmin \
   --conf spark.hadoop.fs.s3a.secret.key=minioadmin \
   --conf spark.hadoop.fs.s3a.path.style.access=true \

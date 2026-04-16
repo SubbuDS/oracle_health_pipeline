@@ -1,14 +1,19 @@
 pipeline {
   agent any
 
+  environment {
+    SPARK_HOME    = "/spark"
+    PIPELINE_HOME = "/pipeline"
+  }
+
   stages {
 
     stage('Validate') {
       steps {
         sh 'echo "Running validation..."'
         sh 'python3 --version'
-        sh 'test -f jobs/bronze_streaming.py && echo "bronze_streaming.py found" || exit 1'
-        sh 'test -f jobs/silver_batch.py && echo "silver_batch.py found" || exit 1'
+        sh 'test -f /pipeline/jobs/bronze_streaming.py && echo "bronze_streaming.py found" || exit 1'
+        sh 'test -f /pipeline/jobs/silver_batch.py && echo "silver_batch.py found" || exit 1'
       }
     }
 
@@ -22,7 +27,7 @@ pipeline {
     stage('Terraform Dev') {
       when { branch 'develop' }
       steps {
-        dir('terraform') {
+        dir('/pipeline/terraform') {
           sh 'terraform init -input=false'
           sh 'terraform workspace select dev || terraform workspace new dev'
           sh 'terraform apply -input=false -auto-approve -var="environment=dev"'
@@ -33,7 +38,7 @@ pipeline {
     stage('Terraform Prod') {
       when { branch 'main' }
       steps {
-        dir('terraform') {
+        dir('/pipeline/terraform') {
           sh 'terraform init -input=false'
           sh 'terraform workspace select prod || terraform workspace new prod'
           sh 'terraform apply -input=false -auto-approve -var="environment=prod"'
@@ -45,7 +50,7 @@ pipeline {
       when { branch 'develop' }
       steps {
         sh 'echo "Running Silver Batch on DEV..."'
-        sh '/Users/subbu/PycharmProjects/oracle_health_pipeline/scripts/run_silver_batch.sh'
+        sh '/pipeline/scripts/run_silver_batch.sh'
       }
     }
 
@@ -53,7 +58,7 @@ pipeline {
       when { branch 'main' }
       steps {
         sh 'echo "Running Silver Batch on PROD..."'
-        sh '/Users/subbu/PycharmProjects/oracle_health_pipeline/scripts/run_silver_batch.sh'
+        sh '/pipeline/scripts/run_silver_batch.sh'
       }
     }
 
