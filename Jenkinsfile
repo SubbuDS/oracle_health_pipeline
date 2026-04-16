@@ -4,6 +4,7 @@ pipeline {
   environment {
     SPARK_HOME    = "/spark"
     PIPELINE_HOME = "/pipeline"
+    PYTEST        = "/opt/pyenv/bin/pytest"
   }
 
   stages {
@@ -14,6 +15,13 @@ pipeline {
         sh 'python3 --version'
         sh 'test -f /pipeline/jobs/bronze_streaming.py && echo "bronze_streaming.py found" || exit 1'
         sh 'test -f /pipeline/jobs/silver_batch.py && echo "silver_batch.py found" || exit 1'
+      }
+    }
+
+    stage('Unit Tests') {
+      steps {
+        sh 'echo "Running unit tests..."'
+        sh '$PYTEST /pipeline/tests/test_silver_logic.py -v'
       }
     }
 
