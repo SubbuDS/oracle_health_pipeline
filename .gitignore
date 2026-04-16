@@ -25,3 +25,4 @@ derby.log
 # Local config overrides
 *.local.yml
 *.local.yaml
+spark-jars/
