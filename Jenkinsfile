@@ -8,6 +8,7 @@ pipeline {
         sh 'echo "Running validation..."'
         sh 'python3 --version'
         sh 'test -f jobs/bronze_streaming.py && echo "bronze_streaming.py found" || exit 1'
+        sh 'test -f jobs/silver_batch.py && echo "silver_batch.py found" || exit 1'
       }
     }
 
@@ -40,10 +41,25 @@ pipeline {
       }
     }
 
+    stage('Run Silver Batch — Dev') {
+      when { branch 'develop' }
+      steps {
+        sh 'echo "Running Silver Batch on DEV..."'
+        sh '/Users/subbu/PycharmProjects/oracle_health_pipeline/scripts/run_silver_batch.sh'
+      }
+    }
+
+    stage('Run Silver Batch — Prod') {
+      when { branch 'main' }
+      steps {
+        sh 'echo "Running Silver Batch on PROD..."'
+        sh '/Users/subbu/PycharmProjects/oracle_health_pipeline/scripts/run_silver_batch.sh'
+      }
+    }
+
     stage('Deploy to Dev') {
       when { branch 'develop' }
       steps {
-        sh 'echo "Verifying ehr-dev resources..."'
         sh 'kubectl get namespace ehr-dev'
         sh 'docker exec postgres psql -U demo -d ehr_db -c "\\dt ehr_dev.*"'
         sh 'docker exec kafka kafka-topics.sh --bootstrap-server localhost:9092 --list | grep ehr.dev'
@@ -54,7 +70,6 @@ pipeline {
     stage('Deploy to Prod') {
       when { branch 'main' }
       steps {
-        sh 'echo "Verifying ehr-prod resources..."'
         sh 'kubectl get namespace ehr-prod'
         sh 'docker exec postgres psql -U demo -d ehr_db -c "\\dt ehr_prod.*"'
         sh 'docker exec kafka kafka-topics.sh --bootstrap-server localhost:9092 --list | grep ehr.prod'
